@@ -1,0 +1,12 @@
+#pragma once
+// Copy to config.h beside this file. Mock mode needs no credentials.
+#ifndef USE_MOCK_DATA
+#define USE_MOCK_DATA 1
+#endif
+// Enable only after checking partial refresh on the physical SSD1683 panel.
+#ifndef ENABLE_PARTIAL_REFRESH
+#define ENABLE_PARTIAL_REFRESH 0
+#endif
+static const char WIFI_SSID[] = "";
+static const char WIFI_PASSWORD[] = "";
+static const char API_KEY[] = "";
