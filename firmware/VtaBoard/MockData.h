@@ -1,23 +1,13 @@
 #pragma once
 #include <string>
 #include <time.h>
-// Synthetic layout examples only; these are not claims about Bay 12 service.
+// Synthetic normalized proxy response; no network needed.
 inline std::string mockResponse(int64_t now) {
-  const char *routes[] = {"500", "22", "522"};
-  const char *destinations[] = {"Downtown", "Palo Alto", "Eastridge"};
-  const int minutes[] = {21, 6, 14}; // Deliberately unsorted to exercise the parser.
-  std::string json = R"({"ServiceDelivery":{"Status":true,"StopMonitoringDelivery":{"MonitoredStopVisit":[)";
-  for (int i = 0; i < 3; ++i) {
-    time_t t = now + minutes[i] * 60;
-    struct tm utc;
-    gmtime_r(&t, &utc);
-    char stamp[32];
-    strftime(stamp, sizeof(stamp), "%Y-%m-%dT%H:%M:%SZ", &utc);
-    if (i) json += ',';
-    json += std::string(R"({"MonitoredVehicleJourney":{"LineRef":")") + routes[i] +
-      R"(","DestinationName":")" + destinations[i] +
-      R"(","MonitoredCall":{"ExpectedArrivalTime":")" + stamp +
-      R"(","ExpectedDepartureTime":")" + stamp + R"("}}})";
-  }
-  return json + "]}}}";
+  time_t t = now;
+  struct tm utc;
+  gmtime_r(&t, &utc);
+  char stamp[32];
+  strftime(stamp, sizeof(stamp), "%Y-%m-%dT%H:%M:%SZ", &utc);
+  return std::string(R"({"ok":true,"stop":"San Jose Diridon Bay 12","updated":")") + stamp +
+    R"(","arrivals":[{"route":"500","destination":"Berryessa","minutes":6},{"route":"568","destination":"Fremont","minutes":14},{"route":"68","destination":"Gilroy","minutes":21}]})";
 }

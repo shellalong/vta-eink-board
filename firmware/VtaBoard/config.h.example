@@ -9,4 +9,5 @@
 #endif
 static const char WIFI_SSID[] = "";
 static const char WIFI_PASSWORD[] = "";
-static const char API_KEY[] = "";
+// The deployed public proxy endpoint; HTTPS is required. No transit secret on device.
+static const char VTA_API_URL[] = "https://your-project.vercel.app/api/arrivals";

@@ -2,3 +2,8 @@ config.h
 .build/
 .DS_Store
 tests/parser_test
+.env
+.env.*
+!.env.example
+.vercel/
+node_modules/

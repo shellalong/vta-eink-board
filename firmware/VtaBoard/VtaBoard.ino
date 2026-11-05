@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
-#include <NetworkClientSecure.h>
+#include <WiFiClientSecure.h>
 #include <time.h>
 #include "config.h"
 #include "Transit.h"
@@ -13,7 +13,7 @@
 static_assert(EPD_W == 400 && EPD_H == 300, "This layout requires 400x300");
 constexpr uint32_t POLL_MS = 120000;
 constexpr uint32_t FULL_MS = 20 * 60 * 1000;
-constexpr size_t MAX_BODY = 128 * 1024;
+constexpr size_t MAX_BODY = 4096;
 uint8_t frame[400 * 300 / 8];
 transit::Board board;
 bool haveSuccess = false, requestOK = false, firstFrame = true;
@@ -63,23 +63,16 @@ bool ensureNetworkAndClock() {
 bool fetchArrivals() {
 #if USE_MOCK_DATA
   auto body = mockResponse(currentTime());
-  return transit::parse(body.c_str(), body.size(), currentTime(), board);
+  return transit::parse(body.c_str(), body.size(), board);
 #else
   if (!ensureNetworkAndClock()) return false;
   errorMessage = "API error";
-  if (!API_KEY[0]) return false;
-  NetworkClientSecure tls;
+  if (strncmp(VTA_API_URL, "https://", 8) != 0) return false;
+  WiFiClientSecure tls;
   tls.useBuiltinCACertBundle(); // ESP32 Arduino 3.3.12; validates the HTTPS peer.
   tls.setHandshakeTimeout(15);
   HTTPClient http;
-  String url = "https://api.511.org/transit/StopMonitoring?api_key=";
-  // Percent-encode the key without logging credentials or the request URL.
-  for (const unsigned char *p = reinterpret_cast<const unsigned char *>(API_KEY); *p; ++p) {
-    if (isalnum(*p) || *p == '-' || *p == '_' || *p == '.' || *p == '~') url += char(*p);
-    else { char encoded[4]; snprintf(encoded, sizeof(encoded), "%%%02X", *p); url += encoded; }
-  }
-  url += "&agency=SC&stopCode=63072&format=json";
-  if (!http.begin(tls, url)) return false;
+  if (!http.begin(tls, VTA_API_URL)) return false;
   http.setConnectTimeout(15000);
   http.setTimeout(15000);
   http.addHeader("Accept", "application/json");
@@ -95,9 +88,9 @@ bool fetchArrivals() {
     BoundedBody body;
     int received = http.writeToStream(&body); // HTTPClient handles chunked transfer framing.
     if (received >= 0 && size_t(received) == body.body.length())
-      ok = transit::parse(body.body.c_str(), body.body.length(), currentTime(), board);
+      ok = transit::parse(body.body.c_str(), body.body.length(), board);
   }
-  Serial.printf("511 HTTP %d; predictions %s\n", code, ok ? "accepted" : "unavailable");
+  Serial.printf("Proxy HTTP %d; predictions %s\n", code, ok ? "accepted" : "unavailable");
   http.end();
   if (!ok && WiFi.status() != WL_CONNECTED) errorMessage = "Offline";
   return ok;
@@ -116,7 +109,7 @@ void syncOldFrame() {
 void drawBoard(bool modeChanged) {
   const char *wifi = USE_MOCK_DATA ? "Wi-Fi: Mock" :
     WiFi.status() == WL_CONNECTED ? "Wi-Fi: Connected" : "Wi-Fi: Offline";
-  renderLayout(board, haveSuccess, requestOK, updated, requestOK ? currentTime() : updated, errorMessage,
+  renderLayout(board, haveSuccess, requestOK, updated, errorMessage,
                USE_MOCK_DATA, wifi);
   bool full = firstFrame || modeChanged || !ENABLE_PARTIAL_REFRESH || millis() - lastFull >= FULL_MS;
   if (full) {
@@ -135,7 +128,7 @@ void drawBoard(bool modeChanged) {
 void pollAndDraw() {
   bool previous = requestOK;
   requestOK = fetchArrivals();
-  if (requestOK) { haveSuccess = true; updated = currentTime(); errorMessage = ""; }
+  if (requestOK) { haveSuccess = true; updated = board.updated; errorMessage = ""; }
   // Failed requests never overwrite board or updated.
   drawBoard(previous != requestOK);
 }

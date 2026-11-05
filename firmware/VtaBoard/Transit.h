@@ -7,11 +7,12 @@
 namespace transit {
 struct Arrival {
   std::string route, destination;
-  int64_t arrival = 0, departure = 0, due = 0;
+  int minutes = 0;
 };
 struct Board {
   Arrival rows[3];
   unsigned count = 0;
+  int64_t updated = 0;
 };
 
 // ISO 8601 with explicit Z or UTC offset; independent of the device's local TZ.
@@ -48,72 +49,36 @@ inline int64_t timestamp(const std::string &s) {
   return (int64_t(era) * 146097 + doe - 719468) * 86400 + h * 3600 + mi * 60 + sec - offset;
 }
 
-inline std::string value(JsonVariantConst v) {
-  if (v.is<JsonArrayConst>()) return value(v[0]);
-  if (v.is<JsonObjectConst>()) return value(v["value"]);
-  if (v.is<const char *>()) return v.as<std::string>();
-  if (v.is<long>()) return std::to_string(v.as<long>());
-  return "";
-}
-inline bool failed(JsonVariantConst v) {
-  return (!v["Status"].isNull() && (v["Status"] == false || v["Status"] == "false")) ||
-         !v["ErrorCondition"].isNull();
-}
-template <typename F> inline void each(JsonVariantConst v, F f) {
-  if (v.is<JsonArrayConst>()) for (JsonVariantConst item : v.as<JsonArrayConst>()) f(item);
-  else if (v.is<JsonObjectConst>()) f(v);
-}
-inline void addVisit(JsonVariantConst visit, int64_t now, Board &out) {
-  auto j = visit["MonitoredVehicleJourney"];
-  auto call = j["MonitoredCall"];
-  if (j["Monitored"] == false || j["Cancellation"] == true ||
-      call["ArrivalStatus"] == "cancelled" || call["DepartureStatus"] == "cancelled") return;
-  Arrival a;
-  a.route = value(j["LineRef"]);
-  a.destination = value(j["DestinationName"]);
-  a.arrival = timestamp(value(call["ExpectedArrivalTime"]));
-  a.departure = timestamp(value(call["ExpectedDepartureTime"]));
-  a.due = a.arrival ? a.arrival : a.departure;
-  if (a.route.empty() || a.destination.empty() || !a.due) return;
-  // At a terminal a bus may have arrived but still be waiting to depart.
-  if (a.due < now) {
-    if (a.departure < now) return;
-    a.due = now;
-  }
-  unsigned pos = 0;
-  while (pos < out.count && out.rows[pos].due <= a.due) ++pos;
-  if (pos >= 3) return;
-  if (out.count < 3) ++out.count;
-  for (unsigned i = out.count - 1; i > pos; --i) out.rows[i] = out.rows[i-1];
-  out.rows[pos] = a;
-}
-// Only assign output on success, including a valid empty response.
-inline bool parse(const char *body, size_t length, int64_t now, Board &out) {
-  if (length >= 3 && uint8_t(body[0]) == 0xEF && uint8_t(body[1]) == 0xBB && uint8_t(body[2]) == 0xBF) {
-    body += 3; length -= 3;
-  }
+// Accept only the small proxy contract. Invalid/error responses never mutate output.
+inline bool parse(const char *body, size_t length, Board &out) {
   JsonDocument doc;
   if (deserializeJson(doc, body, length)) return false;
-  JsonVariantConst service = doc["ServiceDelivery"];
-  if (service.isNull()) service = doc["Siri"]["ServiceDelivery"];
-  if (!service.is<JsonObjectConst>() || failed(service)) return false;
-  auto deliveries = service["StopMonitoringDelivery"];
-  if (!deliveries.is<JsonObjectConst>() && !deliveries.is<JsonArrayConst>()) return false;
-  bool ok = true;
+  if (!doc["ok"].is<bool>() || doc["ok"] != true ||
+      !doc["stop"].is<const char *>() ||
+      doc["stop"] != "San Jose Diridon Bay 12" ||
+      !doc["updated"].is<const char *>() ||
+      !doc["arrivals"].is<JsonArrayConst>()) return false;
   Board fresh;
-  each(deliveries, [&](JsonVariantConst delivery) {
-    if (failed(delivery)) { ok = false; return; }
-    auto visits = delivery["MonitoredStopVisit"];
-    if (!visits.isNull() && !visits.is<JsonArrayConst>() && !visits.is<JsonObjectConst>()) {
-      ok = false; return;
-    }
-    each(visits, [&](JsonVariantConst visit) { addVisit(visit, now, fresh); });
-  });
-  if (ok) out = fresh;
-  return ok;
+  fresh.updated = timestamp(doc["updated"].as<std::string>());
+  if (!fresh.updated) return false;
+  auto arrivals = doc["arrivals"].as<JsonArrayConst>();
+  if (arrivals.size() > 3) return false;
+  for (JsonVariantConst item : arrivals) {
+    if (!item["route"].is<const char *>() || !item["destination"].is<const char *>() ||
+        !item["minutes"].is<int>()) return false;
+    Arrival a;
+    a.route = item["route"].as<std::string>();
+    a.destination = item["destination"].as<std::string>();
+    a.minutes = item["minutes"].as<int>();
+    if (a.route.empty() || a.route.size() > 64 || a.destination.empty() ||
+        a.destination.size() > 256 || a.minutes < 0 || a.minutes > 10080) return false;
+    if (fresh.count && a.minutes < fresh.rows[fresh.count - 1].minutes) return false;
+    fresh.rows[fresh.count++] = a;
+  }
+  out = fresh;
+  return true;
 }
-inline std::string remaining(const Arrival &a, int64_t now) {
-  int64_t seconds = a.due - now;
-  return seconds < 60 ? "ARRIVING" : std::to_string(seconds / 60) + " min";
+inline std::string remaining(const Arrival &a) {
+  return a.minutes == 0 ? "ARRIVING" : std::to_string(a.minutes) + " min";
 }
 } // namespace transit

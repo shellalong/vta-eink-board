@@ -19,7 +19,7 @@ inline void textAt(int x, int y, const std::string &raw, int size, int maxWidth)
 }
 
 inline void renderLayout(const transit::Board &board, bool haveSuccess, bool requestOK,
-                         time_t updated, time_t now, const char *errorMessage,
+                         time_t updated, const char *errorMessage,
                          bool mockData, const char *wifi) {
   EPD_Full(WHITE);
   // Small bus icon.
@@ -30,7 +30,10 @@ inline void renderLayout(const transit::Board &board, bool haveSuccess, bool req
   textAt(48, 16, "VTA TRANSIT", 24, 264);
   EPD_DrawCircle(337, 28, 3, BLACK, requestOK && !mockData ? 1 : 0);
   textAt(347, 21, "LIVE", 12, 40);
-  textAt(12, 55, "San Jose Diridon / Bay 12", 16, 376);
+  textAt(12, 55, "San Jose Diridon", 16, 136);
+  // Draw the bullet directly: the vendor ASCII font has no U+2022 glyph.
+  EPD_DrawCircle(151, 64, 2, BLACK, 1);
+  textAt(164, 55, "Bay 12", 16, 216);
   EPD_DrawLine(12, 85, 387, 85, BLACK);
   textAt(12, 99, "NEXT ARRIVALS", 16, 376);
   for (unsigned i = 0; i < 3; ++i) {
@@ -38,7 +41,7 @@ inline void renderLayout(const transit::Board &board, bool haveSuccess, bool req
     if (i < board.count) {
       textAt(12, y, "Route " + board.rows[i].route, 16, 88);
       textAt(108, y, board.rows[i].destination, 16, 192);
-      std::string due = transit::remaining(board.rows[i], now);
+      std::string due = transit::remaining(board.rows[i]);
       textAt(388 - due.size() * 8, y, due, 16, 80);
     } else if (i == 0 && haveSuccess) {
       textAt(12, y, "No live departures", 16, 376);

@@ -1,0 +1,12 @@
+# Firmware and local files must never be uploaded or served by Vercel.
+firmware/
+tests/
+tools/
+.build/
+.git/
+.env
+.env.*
+config.h
+node_modules/
+README.md
+VENDOR.md

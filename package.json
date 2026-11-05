@@ -1,0 +1,11 @@
+{
+  "name": "vta-diridon-board",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": "22.x" },
+  "scripts": {
+    "test": "node --test tests/api.test.js",
+    "test:firmware": "sh tools/test.sh"
+  }
+}
